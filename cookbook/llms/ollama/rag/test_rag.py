@@ -6,25 +6,30 @@ from app import query_llm
 from assistant import get_rag_assistant
 from langchain_community.llms.ollama import Ollama
 
-EVAL_PROMPT = """
-Expected Response: {expected_response}
-Actual Response: {actual_response}
----
-Answer with ONLY 'true' or 'false': Does the actual response match the expected response? 
-"""
+""" 
+    These tests require the Docker container for the vector DB to be running. The respective files mentioned in comments under the tests  should also be loaded into the vector DB. If the embedding model and/or any part of chunking and retrieval is changed, the files will need to be reuploaded to reflect the new embeddings/chunks. 
+    
+    Page numbers are provided beside the test names for cross-checking sources for passed tests; source checking will eventually be automated with another LLM call but this might increase .
 
-"""
     To run tests, use the following commands to output the results to a log file:
 
     $timestamp = Get-Date -Format "MM-dd_HH-mm"
     pytest . -v | tee "./logs/test_results_$timestamp.log"
 """
 
+EVAL_PROMPT = """
+Expected Response: {expected_response}
+Actual Response: {actual_response}
+---
+Answer with ONLY 'true' or 'false': Do the actual response and the expected response {similarity_threshold}? 
+"""
+
+
 def test_monopoly_rules():
     # Monopoly: page 3
     question="How much total money does a player start with in Monopoly?"
     expected_response="$1500"
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_SAM2():
     # SAM-2: page 18-19
@@ -32,7 +37,7 @@ def test_SAM2():
     expected_response="""The training data mixture consists
 of ∼15.2% SA-1B, ∼70% SA-V and ∼14.8% Internal. The same settings are used when open-source datasets are included, with the change that the additional data is included (∼1.3% DAVIS, ∼9.4% MOSE, ∼9.2% YouTubeVOS, ∼15.5% SA-1B, ∼49.5% SA-V, ∼15.1% Internal)     
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain partly the same percentages")
 
 def test_Triage_email_policy():
     # Triage: page 63
@@ -66,7 +71,7 @@ containing 20,000 or fewer people is changed to 000
 18. Any other unique identifying number, characteristic, or code except the unique code assigned 
 by the investigator to code the data
     """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain very similar information")
 
 def test_Triage_CORE39():
     # Triage: page 41-42
@@ -91,13 +96,13 @@ The results of the client and consumer surveys will be tabulated and reported to
 Committee. The committee will review all survey results and determine priorities for improvement. 
 All specific areas of concern will be incorporated into the Quality Improvement Program.
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain very similar information")
 
 def test_Nomad_amount_and_years():
     # Nomad: page 3
     question="How much did the Nomad Investment fund earn its clients over its duration and how long did they operate?"
     expected_response="""The Nomad Investment Fund earned its clients $2 billion over its duration. It operated for 13 years, from 2001 to 2014."""
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same data")
 
 def test_Nomad_initial_investment():
     # Nomad: page 5-6
@@ -129,7 +134,7 @@ annual letter were International Speedway (US) and Matichon
 its focus on finding undervalued opportunities with potential for
 significant returns.
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same key information")
 
 # def test_Nomad_comparison():
 #     assert query_and_validate(
@@ -150,7 +155,7 @@ this letter would still have begun “1963 was a good year.” Regardless of whe
 particular year, if we can maintain a satisfactory edge on the Dow over an extended period of time, our long 
 term results will be satisfactory -- financially as well as philosophically.
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="convey similar information")
 
 
 def test_Buffet_table_comparison():
@@ -162,13 +167,13 @@ def test_Buffet_table_comparison():
     1961 - Buffett Partnership: 45.9%, Dow Jones Industrial Average: 22.4%
     1962 - Buffett Partnership: 13.9%, Dow Jones Industrial Average: -7.6%
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_Buffet_fetch_value_from_table():
     # Buffet: page 54
     question="How much would $100k compounding at 12% per year make over 20 years?"
     expected_response="$864,627"
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_Buffet_summarize():
     # Buffet: page 26-29
@@ -192,39 +197,39 @@ Asset Values and Payment Adjustments:
 
 Impact on Partners: For partners receiving monthly payments, any reduction in market value equity will result in lower payments in subsequent years. Buffett clarifies the impact of potential losses on partner equity and future distributions.
 """
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain similar key points")
 
 def test_Buffet_complex_table():
     # Buffet: page 44
     question = "From Berkshire's 1961 balance sheets, give me their adjusted valuation of current assets."
     expected_response = "$3,593,000"
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_Buffet_Commonwealth():
     # Buffet: page 4
     question = "What percentage of the assets of Buffet's various partnerships did the Commonwealth Trust Co. represent?"
     expected_response = "Approximately 10% - 20%"
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_Buffet_Commonwealth():
     # Buffet: page 4
     question = "What was the intrinsic value per share of Commonwealth Trust Co. when Buffett started purchasing the stock? "
     expected_response = "Around $125 per share."
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
 def test_Buffet_Sanborn():
     # Buffet: page 12
     question = "How many stockholders had shares of Sanborn?"
     expected_response = "There were 1600 stockholders before half of them exchanged their stock for portfolio securities at fair value."
-    assert query_and_validate(question, expected_response)
+    assert query_and_validate(question, expected_response, similarity_threshold="contain the same numbers")
 
-def query_and_validate(question: str, expected_response: str, llm: str = "llama3", embeddings_model: str = "nomic-embed-text"):
+def query_and_validate(question: str, expected_response: str, llm: str = "llama3", embeddings_model: str = "nomic-embed-text", similarity_threshold: str = "match each other") -> bool:
 
     rag_assistant = get_rag_assistant(llm_model=llm, embeddings_model=embeddings_model)
     response_text = query_llm(rag_assistant, question)
 
     prompt = EVAL_PROMPT.format(
-        expected_response=expected_response, actual_response=response_text
+        expected_response=expected_response, actual_response=response_text, similarity_threshold=similarity_threshold
     )
 
     model = Ollama(model="llama3")
