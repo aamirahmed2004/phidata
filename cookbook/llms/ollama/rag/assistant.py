@@ -44,16 +44,16 @@ def get_rag_assistant(
         llm=Ollama(model=llm_model),
         storage=PgAssistantStorage(table_name="local_rag_assistant", db_url=db_url),
         knowledge_base=knowledge,
-        description="You are an AI called 'RAGit' and your task is to answer questions using the provided information",
+        description="You are a helpful data analyst and your task is to answer questions using the provided information. You will be given a generous bonus for answering correctly.",
         instructions=[
             "When a user asks a question, you will be provided with information about the question.",
             "Carefully read this information and provide a clear and concise answer to the user.",
             "Do not use phrases like 'based on my knowledge' or 'depending on the information'.",
         ],
         # Uncomment this setting adds chat history to the messages
-        # add_chat_history_to_messages=True,
+        add_chat_history_to_messages=True,
         # Uncomment this setting to customize the number of previous messages added from the chat history
-        # num_history_messages=3,
+        num_history_messages=10,
         # This setting adds references from the knowledge_base to the user prompt
         add_references_to_prompt=True,
         # This setting tells the LLM to format messages in markdown

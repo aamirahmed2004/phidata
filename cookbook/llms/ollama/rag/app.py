@@ -1,9 +1,14 @@
 from typing import List
-
+import tempfile
+from pathlib import Path
 import streamlit as st
 from phi.assistant import Assistant
 from phi.document import Document
 from phi.document.reader.pdf import PDFReader
+from csv_reader import CSVReader
+from phi.document.reader.docx import DocxReader
+from phi.document.reader.text import TextReader
+# from phi.document.reader.csv import CSVReader
 from phi.document.reader.website import WebsiteReader
 from phi.utils.log import logger
 
@@ -13,7 +18,7 @@ st.set_page_config(
     page_title="Local RAG",
     page_icon=":orange_heart:",
 )
-st.title("Local RAG with Ollama and PgVector")
+st.title("Local RAG Chat with PDF Demo")
 st.markdown("##### :orange_heart: built using [phidata](https://github.com/phidatahq/phidata)")
 
 
@@ -26,10 +31,20 @@ def restart_assistant():
         st.session_state["file_uploader_key"] += 1
     st.rerun()
 
+def query_llm(rag_assistant: Assistant, question: str) -> str:
+    with st.chat_message("assistant"):
+            response = ""
+            resp_container = st.empty()
+            for delta in rag_assistant.run(question):
+                response += delta  # type: ignore
+                resp_container.markdown(response)
+    
+    return response
+
 
 def main() -> None:
     # Get model
-    llm_model = st.sidebar.selectbox("Select Model", options=["llama3", "phi3", "openhermes", "llama2"])
+    llm_model = st.sidebar.selectbox("Select Model", options=["llama3", "llama3.1"])
     # Set assistant_type in session state
     if "llm_model" not in st.session_state:
         st.session_state["llm_model"] = llm_model
@@ -41,7 +56,7 @@ def main() -> None:
     # Get Embeddings model
     embeddings_model = st.sidebar.selectbox(
         "Select Embeddings",
-        options=["nomic-embed-text", "llama3", "openhermes", "phi3"],
+        options=["nomic-embed-text"],
         help="When you change the embeddings model, the documents will need to be added again.",
     )
     # Set assistant_type in session state
@@ -93,16 +108,16 @@ def main() -> None:
     last_message = st.session_state["messages"][-1]
     if last_message.get("role") == "user":
         question = last_message["content"]
-        with st.chat_message("assistant"):
-            response = ""
-            resp_container = st.empty()
-            for delta in rag_assistant.run(question):
-                response += delta  # type: ignore
-                resp_container.markdown(response)
-            st.session_state["messages"].append({"role": "assistant", "content": response})
+        response = query_llm(rag_assistant, question)
+        st.session_state["messages"].append({"role": "assistant", "content": response})
 
     # Load knowledge base
     if rag_assistant.knowledge_base:
+
+        # Display number of chunks in the knowledge base
+        if "num_chunks" not in st.session_state:
+            st.session_state["num_chunks"] = rag_assistant.knowledge_base.vector_db.get_count()
+
         # -*- Add websites to knowledge base
         if "url_scrape_key" not in st.session_state:
             st.session_state["url_scrape_key"] = 0
@@ -119,6 +134,7 @@ def main() -> None:
                     web_documents: List[Document] = scraper.read(input_url)
                     if web_documents:
                         rag_assistant.knowledge_base.load_documents(web_documents, upsert=True)
+                        st.session_state["num_chunks"] = rag_assistant.knowledge_base.vector_db.get_count()
                     else:
                         st.sidebar.error("Could not read website")
                     st.session_state[f"{input_url}_uploaded"] = True
@@ -129,25 +145,78 @@ def main() -> None:
             st.session_state["file_uploader_key"] = 100
 
         uploaded_file = st.sidebar.file_uploader(
-            "Add a PDF :page_facing_up:", type="pdf", key=st.session_state["file_uploader_key"]
+            "Add a file (xlsx, csv, pdf, docx, txt) :page_facing_up:", type=["pdf","csv","docx","txt"], key=st.session_state["file_uploader_key"]
         )
         if uploaded_file is not None:
-            alert = st.sidebar.info("Processing PDF...", icon="🧠")
-            rag_name = uploaded_file.name.split(".")[0]
+            alert = st.sidebar.info("Processing file...", icon="🧠")
+            rag_name = uploaded_file.name.rsplit(".",1)[0]
+            extension = uploaded_file.name.rsplit(".",1)[1]
             if f"{rag_name}_uploaded" not in st.session_state:
-                reader = PDFReader()
-                rag_documents: List[Document] = reader.read(uploaded_file)
+                rag_documents = None
+                if extension == "pdf":
+                    reader = PDFReader()
+                    rag_documents: List[Document] = reader.read(uploaded_file)
+                elif extension == "csv":
+                    temp_dir = Path("tempDir")
+                    temp_dir.mkdir(exist_ok=True)
+
+                    # Create a temporary directory inside tempDir
+                    with tempfile.TemporaryDirectory(dir=temp_dir) as temp_path:
+                        temp_file_path = temp_dir / uploaded_file.name
+                        # Save the uploaded CSV file to the temporary directory
+                        with open(temp_file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+
+                    # Pass the file path to the CSVReader object
+                    reader = CSVReader()
+                    rag_documents: List[Document] = reader.read(temp_file_path, delimiter=",")
+
+                elif extension == "docx":
+                    reader = DocxReader()
+                    temp_dir = Path("tempDir")
+                    temp_dir.mkdir(exist_ok=True)
+
+                    # Create a temporary directory inside tempDir
+                    with tempfile.TemporaryDirectory(dir=temp_dir) as temp_path:
+                        temp_file_path = temp_dir / uploaded_file.name
+                        # Save the uploaded CSV file to the temporary directory
+                        with open(temp_file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+
+                    # Pass the file path to the CSVReader object
+                    rag_documents: List[Document] = reader.read(temp_file_path)
+
+                elif extension == "txt":
+                    reader = TextReader()
+                    temp_dir = Path("tempDir")
+                    temp_dir.mkdir(exist_ok=True)
+
+                    # Create a temporary directory inside tempDir
+                    with tempfile.TemporaryDirectory(dir=temp_dir) as temp_path:
+                        temp_file_path = temp_dir / uploaded_file.name
+                        # Save the uploaded CSV file to the temporary directory
+                        with open(temp_file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+
+                    # Pass the file path to the CSVReader object
+                    rag_documents: List[Document] = reader.read(temp_file_path)
+
+                # The temporary file and directory are deleted automatically
+
                 if rag_documents:
                     rag_assistant.knowledge_base.load_documents(rag_documents, upsert=True)
+                    st.session_state["num_chunks"] = rag_assistant.knowledge_base.vector_db.get_count()
                 else:
-                    st.sidebar.error("Could not read PDF")
+                    st.sidebar.error(f"Could not read .{extension} file")
                 st.session_state[f"{rag_name}_uploaded"] = True
             alert.empty()
 
     if rag_assistant.knowledge_base and rag_assistant.knowledge_base.vector_db:
+        st.sidebar.text(f"Num of chunks (for demo): \n{st.session_state['num_chunks']}")
         if st.sidebar.button("Clear Knowledge Base"):
             rag_assistant.knowledge_base.vector_db.clear()
             st.sidebar.success("Knowledge base cleared")
+            st.session_state["num_chunks"] = 0
 
     if rag_assistant.storage:
         rag_assistant_run_ids: List[str] = rag_assistant.storage.get_all_run_ids()
@@ -162,5 +231,5 @@ def main() -> None:
     if st.sidebar.button("New Run"):
         restart_assistant()
 
-
-main()
+if __name__ == "__main__":
+    main()
